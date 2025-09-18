@@ -29,18 +29,43 @@ async function runMigrations() {
     console.log("DATABASE_URL:", process.env.DATABASE_URL ? "DEFINIDA" : "NÃO DEFINIDA");
     console.log("NODE_ENV:", process.env.NODE_ENV);
     
+    // Verificar conexão com banco
+    try {
+      const testQuery = await pool.query('SELECT NOW()');
+      console.log("✅ Conexão com banco OK:", testQuery.rows[0]);
+    } catch (error) {
+      console.error("❌ Erro de conexão com banco:", error);
+      throw error;
+    }
+    
     await migrate(db, { migrationsFolder: "drizzle" });
     console.log("✅ Migrações executadas com sucesso!");
     
-    // Criar usuário admin se não existir
-    const adminEmail = process.env.EMAIL_USER || "leolulu842@gmail.com";
-    const adminPassword = process.env.EMAIL_PASSWORD || "123456";
+    // Verificar se tabela users existe
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+      );
+    `);
+    console.log("Tabela users existe:", tableExists.rows[0].exists);
+    
+    // SEPARAR CREDENCIAIS: EMAIL_USER é para envio de emails, não para admin
+    // Credenciais do administrador são fixas
+    const adminEmail = "leolulu842@gmail.com";
+    const adminPassword = "123456";
+    
+    // Credenciais de email (para envio de notificações)
+    const emailUser = process.env.EMAIL_USER || "gaelsalao12@gmail.com";
+    const emailPassword = process.env.EMAIL_PASSWORD || "dbde barg qkyp lnvs";
     
     console.log("🔍 Verificando se usuário admin existe...");
-    console.log("Admin email:", adminEmail);
+    console.log("Admin email (para login):", adminEmail);
+    console.log("Email service (para envios):", emailUser);
     
     const existingAdmin = await db.select().from(users).where(eq(users.email, adminEmail)).execute();
-    console.log("Usuários encontrados com este email:", existingAdmin.length);
+    console.log("Usuários encontrados com email admin:", existingAdmin.length);
 
     if (existingAdmin.length === 0) {
       console.log("🚀 Criando usuário admin...");
@@ -76,8 +101,19 @@ async function runMigrations() {
       console.log(`Usuario ${index + 1}: ${user.email} (${user.role})`);
     });
     
+    // Listar todas as tabelas para debug
+    const allTables = await pool.query(`
+      SELECT tablename FROM pg_tables 
+      WHERE schemaname = 'public';
+    `);
+    console.log("📋 Tabelas existentes:", allTables.rows.map(row => row.tablename));
+    
     await pool.end();
     console.log("=== INICIALIZAÇÃO COMPLETA ===");
+    console.log("🔑 Para fazer login use:");
+    console.log("   Email: leolulu842@gmail.com");
+    console.log("   Senha: 123456");
+    console.log("📧 Para envio de emails será usado:", emailUser);
     process.exit(0);
   } catch (error) {
     console.error("❌ ERRO AO EXECUTAR MIGRAÇÕES:", error);
