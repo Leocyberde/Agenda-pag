@@ -127,7 +127,7 @@ export class PostgreSQLStorage implements IStorage {
       password: hashedPassword,
       status: insertMerchant.status || "pending",
       planStatus: insertMerchant.planStatus || "free", // Default plan status
-      planValidity: insertMerchant.planValidity || null // Default plan validity
+      planValidity: insertMerchant.planValidity || null, // Default plan validity
       createdAt: now,
       updatedAt: now,
       workDays: insertMerchant.workDays || "[0,1,2,3,4,5,6]", // Default to all days
