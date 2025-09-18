@@ -25,37 +25,63 @@ const db = drizzle(pool, {
 
 async function runMigrations() {
   try {
-    console.log("Iniciando migrações do banco de dados...");
+    console.log("=== INICIANDO MIGRAÇÕES (RENDER/REPLIT) ===");
+    console.log("DATABASE_URL:", process.env.DATABASE_URL ? "DEFINIDA" : "NÃO DEFINIDA");
+    console.log("NODE_ENV:", process.env.NODE_ENV);
     
     await migrate(db, { migrationsFolder: "drizzle" });
-    console.log("Migrações executadas com sucesso!");
+    console.log("✅ Migrações executadas com sucesso!");
     
     // Criar usuário admin se não existir
-    console.log("Verificando se usuário admin existe...");
     const adminEmail = process.env.EMAIL_USER || "leolulu842@gmail.com";
+    const adminPassword = process.env.EMAIL_PASSWORD || "123456";
+    
+    console.log("🔍 Verificando se usuário admin existe...");
+    console.log("Admin email:", adminEmail);
+    
     const existingAdmin = await db.select().from(users).where(eq(users.email, adminEmail)).execute();
+    console.log("Usuários encontrados com este email:", existingAdmin.length);
 
     if (existingAdmin.length === 0) {
-      console.log("Criando usuário admin...");
-      const hashedPassword = await bcrypt.hash(process.env.EMAIL_PASSWORD || "123456", 10);
-      await db.insert(users).values({
+      console.log("🚀 Criando usuário admin...");
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
+      
+      const newUser = {
         id: randomUUID(),
         email: adminEmail,
         password: hashedPassword,
         role: "admin",
         createdAt: new Date(),
-      }).execute();
-
-      console.log("Usuário admin criado com sucesso!");
+      };
+      
+      await db.insert(users).values(newUser).execute();
+      console.log("✅ Usuário admin criado com sucesso!");
+      console.log("Admin ID:", newUser.id);
+      console.log("Admin Email:", newUser.email);
+      
+      // Verificar se foi realmente criado
+      const verification = await db.select().from(users).where(eq(users.email, adminEmail)).execute();
+      console.log("✅ Verificação pós-criação: usuários encontrados:", verification.length);
+      
     } else {
-      console.log("Usuário admin já existe.");
+      console.log("ℹ️ Usuário admin já existe.");
+      console.log("Admin existente ID:", existingAdmin[0].id);
+      console.log("Admin existente Email:", existingAdmin[0].email);
     }
     
+    // Listar todos os usuários para debug
+    const allUsers = await db.select({ email: users.email, role: users.role }).from(users).execute();
+    console.log("📊 Total de usuários no banco:", allUsers.length);
+    allUsers.forEach((user, index) => {
+      console.log(`Usuario ${index + 1}: ${user.email} (${user.role})`);
+    });
+    
     await pool.end();
-    console.log("Inicialização completa!");
+    console.log("=== INICIALIZAÇÃO COMPLETA ===");
     process.exit(0);
   } catch (error) {
-    console.error("Erro ao executar migrações:", error);
+    console.error("❌ ERRO AO EXECUTAR MIGRAÇÕES:", error);
+    console.error("Stack trace:", error.stack);
     await pool.end();
     process.exit(1);
   }
