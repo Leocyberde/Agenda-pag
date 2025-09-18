@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Calendar, Clock, Users, User, UserCheck, Phone, Mail, DollarSign, StickyNote, Plus, AlertCircle } from "lucide-react";
 import { authService } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import ChangePasswordForm from "@/components/auth/change-password-form";
 
 
@@ -154,7 +155,11 @@ export default function MerchantDashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedService, setSelectedService] = useState<any>(null);
   const [showServiceModal, setShowServiceModal] = useState(false);
+  const [showPixModal, setShowPixModal] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'pending' | 'processing' | 'approved' | 'failed'>('idle');
+  const [pixData, setPixData] = useState<any>(null);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   useEffect(() => {
     const unsubscribe = authService.subscribe((state) => {
@@ -377,6 +382,208 @@ export default function MerchantDashboard() {
     },
   ];
 
+  // Mutation for upgrading to VIP
+  const { mutate: upgradeMutation, isLoading: upgradeLoading } = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/merchant/upgrade-to-vip", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${authService.getState().token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Erro ao ativar plano VIP");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/merchants/${user?.id}`] });
+      toast({
+        title: "Plano VIP ativado com sucesso!",
+        description: data.message,
+        variant: "success"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao ativar plano VIP",
+        description: error.message || "Por favor, tente novamente.",
+        variant: "destructive"
+      });
+    },
+  });
+
+  // Mutation for renewing VIP
+  const { mutate: renewMutation, isLoading: renewLoading } = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/merchant/renew-vip", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${authService.getState().token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Erro ao renovar plano VIP");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/merchants/${user?.id}`] });
+      toast({
+        title: "Plano VIP renovado com sucesso!",
+        description: data.message,
+        variant: "success"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao renovar plano VIP",
+        description: error.message || "Por favor, tente novamente.",
+        variant: "destructive"
+      });
+    },
+  });
+
+  // Fetch merchant data to check plan status and validity
+  const { data: merchantData, isLoading: merchantDataLoading } = useQuery<any>({
+    queryKey: [`/api/merchants/${user?.id}`],
+    queryFn: async () => {
+      const response = await fetch(`/api/merchants/${user?.id}`, {
+        headers: {
+          "Authorization": `Bearer ${authService.getState().token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao buscar dados do comerciante");
+      }
+
+      return response.json();
+    },
+    enabled: authService.getState().isAuthenticated && !!user?.id,
+  });
+
+  const planStatus = merchantData?.planStatus || 'free';
+  const planValidity = merchantData?.planValidity; // Assuming this is a date string
+
+  const isExpired = planValidity ? new Date(planValidity) < new Date() : true;
+  const daysUntilExpiration = planValidity ? Math.ceil((new Date(planValidity).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+  const handleUpgradeToVip = () => {
+    upgradeMutation();
+  };
+
+  const handleRenewVip = () => {
+    renewMutation();
+  };
+
+  const createPixPayment = async () => {
+    setPaymentStatus('pending');
+    try {
+      const response = await fetch('/api/pix/create-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authService.getState().token}`,
+        },
+        body: JSON.stringify({
+          description: 'Renovação VIP - 30 dias',
+          amount: 100, // R$ 1,00 em centavos
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erro ao criar pagamento PIX');
+      }
+
+      const data = await response.json();
+      setPixData(data);
+      setPaymentStatus('processing');
+    } catch (error: any) {
+      setPaymentStatus('failed');
+      toast({
+        title: 'Erro ao criar pagamento PIX',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const checkPixPaymentStatus = async () => {
+    if (!pixData?.id) return;
+
+    try {
+      const response = await fetch(`/api/pix/payment-status/${pixData.id}`, {
+        headers: {
+          'Authorization': `Bearer ${authService.getState().token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao verificar status do pagamento');
+      }
+
+      const data = await response.json();
+
+      if (data.status === 'paid') {
+        setPaymentStatus('approved');
+        queryClient.invalidateQueries({ queryKey: [`/api/merchants/${user?.id}`] }); // Invalidate merchant data to refresh plan status
+        toast({
+          title: 'Pagamento PIX confirmado!',
+          description: 'Seu plano VIP foi renovado com sucesso.',
+          variant: 'success',
+        });
+        // Optionally close the modal after a delay
+        setTimeout(() => {
+          setShowPixModal(false);
+          resetPaymentState();
+        }, 3000);
+      } else if (data.status === 'failed' || data.status === 'refused') {
+        setPaymentStatus('failed');
+      }
+      // If status is 'pending' or 'processing', keep waiting
+    } catch (error: any) {
+      console.error('Erro ao verificar status do pagamento PIX:', error);
+      setPaymentStatus('failed');
+      toast({
+        title: 'Erro ao verificar pagamento PIX',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const resetPaymentState = () => {
+    setPaymentStatus('idle');
+    setPixData(null);
+  };
+
+  // Poll for payment status if processing
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    if (paymentStatus === 'processing' && pixData?.id) {
+      intervalId = setInterval(checkPixPaymentStatus, 5000); // Check every 5 seconds
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [paymentStatus, pixData]);
+
+  const handleRenewVipWithPix = () => {
+    setShowPixModal(true);
+    createPixPayment();
+  };
+
+
   return (
     <div className="min-h-screen bg-background" data-testid="page-merchant-dashboard">
       {/* Header */}
@@ -445,6 +652,58 @@ export default function MerchantDashboard() {
               );
             })}
           </div>
+
+          {/* Plan Information and Actions */}
+          <Card>
+            <div className="p-6 border-b border-border">
+              <h3 className="text-lg font-semibold text-foreground">Seu Plano</h3>
+            </div>
+            <CardContent className="p-6">
+              {merchantDataLoading ? (
+                <p className="text-sm text-muted-foreground">Carregando informações do plano...</p>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">Status do Plano:</span>
+                      <Badge variant={planStatus === 'vip' ? 'outline' : 'secondary'}>{planStatus === 'vip' ? 'VIP' : 'Grátis'}</Badge>
+                    </div>
+                    {planValidity && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Validade: {new Date(planValidity).toLocaleDateString('pt-BR')}
+                        {isExpired && <span className="text-red-600 ml-2">(Expirado)</span>}
+                      </p>
+                    )}
+                    {planStatus === 'free' && daysUntilExpiration <= 10 && !isExpired && (
+                      <p className="text-sm text-yellow-600 mt-1">
+                        Seu plano grátis expira em {daysUntilExpiration} dias. Considere o upgrade!
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    {planStatus === 'free' || isExpired ? (
+                      <Button 
+                        onClick={handleUpgradeToVip}
+                        disabled={upgradeLoading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {upgradeLoading ? "Processando..." : "Contratar VIP - R$ 1,00/mês"}
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleRenewVipWithPix} // Changed to call the new function
+                        disabled={renewLoading}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {renewLoading ? "Processando..." : "Renovar VIP por 30 dias"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Quick Actions */}
           <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
@@ -897,7 +1156,7 @@ export default function MerchantDashboard() {
 
                                       try {
                                         console.log(`Marking appointment ${appointment.id} as paid`);
-                                        
+
                                         const response = await fetch(`/api/appointments/${appointment.id}/status`, {
                                           method: "POST",
                                           headers: {
@@ -914,7 +1173,7 @@ export default function MerchantDashboard() {
                                           // Force immediate refetch of data
                                           await queryClient.invalidateQueries({ queryKey: ["/api/appointments/all"] });
                                           await queryClient.invalidateQueries({ queryKey: ["/api/appointments/pending-payments"] });
-                                          
+
                                           // Force refetch
                                           queryClient.refetchQueries({ queryKey: ["/api/appointments/all"] });
                                           queryClient.refetchQueries({ queryKey: ["/api/appointments/pending-payments"] });
@@ -953,7 +1212,7 @@ export default function MerchantDashboard() {
 
                                       try {
                                         console.log(`Marking appointment ${appointment.id} as pending payment`);
-                                        
+
                                         const response = await fetch(`/api/appointments/${appointment.id}/status`, {
                                           method: "POST",
                                           headers: {
@@ -970,7 +1229,7 @@ export default function MerchantDashboard() {
                                           // Force immediate refetch of data
                                           await queryClient.invalidateQueries({ queryKey: ["/api/appointments/all"] });
                                           await queryClient.invalidateQueries({ queryKey: ["/api/appointments/pending-payments"] });
-                                          
+
                                           // Force refetch
                                           queryClient.refetchQueries({ queryKey: ["/api/appointments/all"] });
                                           queryClient.refetchQueries({ queryKey: ["/api/appointments/pending-payments"] });
@@ -1191,6 +1450,156 @@ export default function MerchantDashboard() {
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PIX Payment Modal for Renewal */}
+      {showPixModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-foreground">Renovar Plano VIP</h3>
+              <button
+                onClick={() => {
+                  setShowPixModal(false);
+                  resetPaymentState();
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-2">Resumo do Pagamento</h4>
+                <div className="flex justify-between">
+                  <span>Renovação VIP - 30 dias</span>
+                  <span className="font-medium">R$ 1,00</span>
+                </div>
+              </div>
+
+              {paymentStatus === 'idle' && (
+                <div className="text-center">
+                  <Button
+                    onClick={createPixPayment}
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={renewLoading} // Use renewLoading to disable button while initial VIP renewal is processed
+                  >
+                    {renewLoading ? "Processando..." : "Gerar PIX para Renovação"}
+                  </Button>
+                </div>
+              )}
+
+              {paymentStatus === 'pending' && !pixData && (
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Gerando código PIX...
+                  </p>
+                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+                </div>
+              )}
+
+              {paymentStatus === 'processing' && pixData && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium mb-2">Escaneie o QR Code para pagar</p>
+                    <div className="flex justify-center mb-4">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <img 
+                          src={`data:image/png;base64,${pixData.qr_code_base64}`}
+                          alt="QR Code PIX" 
+                          className="w-48 h-48"
+                          onError={(e) => {
+                            console.error('Error loading QR code image:', e);
+                            console.log('QR code base64 data:', pixData.qr_code_base64?.substring(0, 100) + '...');
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Ou copie e cole o código PIX no seu banco
+                    </p>
+                    <div className="bg-gray-100 p-2 rounded text-xs break-all">
+                      {pixData.qr_code}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(pixData.qr_code || "");
+                          toast({
+                            title: "Código copiado!",
+                            description: "O código PIX foi copiado para a área de transferência.",
+                            variant: "success"
+                          });
+                        }}
+                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      >
+                        📋 Copiar Código PIX
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Compartilhar via WhatsApp (opcional)
+                          const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`Código PIX para pagamento: ${pixData.qr_code}`)}`;
+                          window.open(whatsappUrl, '_blank');
+                        }}
+                        className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                      >
+                        📱 Compartilhar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
+                    <p className="text-sm text-muted-foreground">
+                      Aguardando confirmação do pagamento...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {paymentStatus === 'approved' && (
+                <div className="text-center">
+                  <div className="text-green-600 mb-4">
+                    <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-green-600 mb-2">
+                    Pagamento Aprovado!
+                  </h4>
+                  <p className="text-sm text-muted-foreground">
+                    Seu plano VIP foi renovado com sucesso por 30 dias.
+                  </p>
+                </div>
+              )}
+
+              {paymentStatus === 'failed' && (
+                <div className="text-center">
+                  <div className="text-red-600 mb-4">
+                    <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-red-600 mb-2">
+                    Falha no Pagamento
+                  </h4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Não foi possível processar o pagamento. Tente novamente.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      resetPaymentState();
+                      createPixPayment(); // Retry creating PIX payment
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    Tentar Novamente
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
