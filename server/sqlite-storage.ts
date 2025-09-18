@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Merchant, type InsertMerchant, type Service, type InsertService, type Employee, type InsertEmployee, type Client, type InsertClient, type Appointment, type InsertAppointment, type AvailabilityData, type AppointmentStatusData, promotions, type EmployeeDayOff, type InsertEmployeeDayOff, type Promotion, type InsertPromotion, type SystemSetting } from "../shared/schema";
+import { type User, type InsertUser, type Merchant, type InsertMerchant, type Service, type InsertService, type Employee, type InsertEmployee, type Client, type InsertClient, type Appointment, type InsertAppointment, type AvailabilityData, type AppointmentStatusData, promotions, type EmployeeDayOff, type InsertEmployeeDayOff, type Promotion, type InsertPromotion, type SystemSetting, users } from "../shared/schema";
 import { db, initializeDatabase } from "./db";import { eq, count, gte, and, sql, lte, desc, asc, inArray, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
