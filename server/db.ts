@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
-import { users, merchants, services, employees, clients, appointments, employeeDaysOff, penalties, promotions, systemSettings } from "../shared/schema-postgres.js";
+import { users, merchants, services, employees, clients, appointments, employeeDaysOff, penalties, promotions, systemSettings } from "../shared/schema.ts";
 import { eq, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { randomUUID } from "crypto";
