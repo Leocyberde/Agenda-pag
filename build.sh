@@ -7,13 +7,20 @@ echo "Iniciando processo de build..."
 echo "Instalando dependências..."
 npm install
 
-# Executar migrações do banco de dados
-echo "Executando migrações do banco de dados..."
-npm run migrate
+# Verificar se DATABASE_URL está definida
+if [ -z "$DATABASE_URL" ]; then
+  echo "ERRO: Variável de ambiente DATABASE_URL não definida. As migrações não podem ser executadas."
+  exit 1
+fi
+
+# Executar migrações do banco de dados explicitamente
+echo "Executando migrações do banco de dados via node migrate.js..."
+node migrate.js
 
 # Build do projeto
 echo "Fazendo build do projeto..."
 npm run build
 
 echo "Build concluído com sucesso!"
+
 
