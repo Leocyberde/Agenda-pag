@@ -34,7 +34,10 @@ export const merchants = pgTable("merchants", {
   lastPaymentDate: timestamp("last_payment_date"), // Last payment date
   nextPaymentDue: timestamp("next_payment_due"), // Next payment due date
   monthlyFee: integer("monthly_fee").default(5000), // Monthly fee in cents (default R$ 50.00)
-  paymentStatus: text("payment_status").notNull().default("pending"), // pending, paid, overdue
+  paymentStatus: text("payment_status").notNull().default("pending"), // pending, paid, overdue, trial
+  // Plan management
+  planStatus: text("plan_status").notNull().default("free"), // free, vip
+  planValidity: timestamp("plan_validity"), // When the current plan expires
   // Booking policies
   noShowFeeEnabled: boolean("no_show_fee_enabled").notNull().default(false), // Enable/disable no-show fee
   noShowFeeAmount: integer("no_show_fee_amount").default(0), // Fee amount in cents for no-show
@@ -179,6 +182,9 @@ export const insertMerchantSchema = createInsertSchema(merchants).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  planStatus: z.enum(["free", "vip"]).default("free").optional(),
+  planValidity: z.date().optional().nullable(),
 });
 
 export const insertServiceSchema = createInsertSchema(services).omit({
@@ -231,9 +237,11 @@ export const insertPromotionSchema = createInsertSchema(promotions).omit({
 export const merchantAccessSchema = z.object({
   accessDurationDays: z.number().min(1, "Duração deve ser pelo menos 1 dia").max(365, "Duração máxima é 365 dias"),
   monthlyFee: z.number().min(0, "Taxa mensal deve ser maior ou igual a zero"),
-  paymentStatus: z.enum(["pending", "paid", "overdue"], {
+  paymentStatus: z.enum(["pending", "paid", "overdue", "trial"], {
     invalid_type_error: "Status de pagamento inválido"
   }),
+  planStatus: z.enum(["free", "vip"]).default("free").optional(),
+  planValidity: z.date().optional().nullable(),
 });
 
 export const loginSchema = z.object({

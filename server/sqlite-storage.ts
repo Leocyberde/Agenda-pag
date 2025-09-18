@@ -1,6 +1,6 @@
-import { type User, type InsertUser, type Merchant, type InsertMerchant, type Service, type InsertService, type Employee, type InsertEmployee, type Client, type InsertClient, type Appointment, type InsertAppointment, type AvailabilityData, type AppointmentStatusData } from "@shared/schema";
+import { type User, type InsertUser, type Merchant, type InsertMerchant, type Service, type InsertService, type Employee, type InsertEmployee, type Client, type InsertClient, type Appointment, type InsertAppointment, type AvailabilityData, type AppointmentStatusData, promotions, systemSettings, type EmployeeDayOff, type InsertEmployeeDayOff, type Promotion, type InsertPromotion, type SystemSetting } from "../shared/schema-postgres";
 import { db, initializeDatabase } from "./db";
-import { users, merchants, services, employees, clients, appointments, employeeDaysOff, penalties, promotions, type EmployeeDayOff, type InsertEmployeeDayOff, type Promotion, type InsertPromotion, systemSettings, type SystemSetting } from "@shared/schema";
+
 import { eq, count, gte, and, sql, lte, desc, asc, inArray, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
@@ -126,11 +126,13 @@ export class PostgreSQLStorage implements IStorage {
       id,
       password: hashedPassword,
       status: insertMerchant.status || "pending",
+      planStatus: insertMerchant.planStatus || "free", // Default plan status
+      planValidity: insertMerchant.planValidity || null // Default plan validity
       createdAt: now,
       updatedAt: now,
       workDays: insertMerchant.workDays || "[0,1,2,3,4,5,6]", // Default to all days
       startTime: insertMerchant.startTime || "09:00", // Default start time
-      endTime: insertMerchant.endTime || "18:00", // Default end time
+      endTime: insertMerchant.endTime || "18:00" // Default end time
     };
 
     await this.db.insert(merchants).values(merchant).execute();
@@ -151,6 +153,8 @@ export class PostgreSQLStorage implements IStorage {
     const updatedMerchant: Merchant = {
       ...existingMerchant,
       ...processedUpdates,
+      planStatus: processedUpdates.planStatus || existingMerchant.planStatus,
+      planValidity: processedUpdates.planValidity || existingMerchant.planValidity,
       updatedAt: new Date(),
     };
 
@@ -2406,7 +2410,9 @@ export class PostgreSQLStorage implements IStorage {
       accessEndDate: accessEndDate,
       lastPaymentDate: now,
       nextPaymentDue: nextPaymentDue,
-      paymentStatus: "paid"
+      paymentStatus: "paid",
+      planStatus: "vip", // Assuming renewal means VIP plan
+      planValidity: accessEndDate,
     };
 
     const merchant = await this.updateMerchant(merchantId, updates);
@@ -2417,10 +2423,19 @@ export class PostgreSQLStorage implements IStorage {
     accessDurationDays?: number;
     monthlyFee?: number;
     paymentStatus?: string;
+    planStatus?: string;
+    planValidity?: Date;
   }): Promise<Merchant | undefined> {
     if (!this.initialized) await this.initialize();
 
-    const updates = { ...settings };
+    const updates: Partial<InsertMerchant> = { ...settings };
+
+    if (settings.planStatus) {
+      updates.planStatus = settings.planStatus;
+    }
+    if (settings.planValidity) {
+      updates.planValidity = settings.planValidity;
+    }
 
     if (settings.accessDurationDays) {
       const existingMerchant = await this.getMerchant(merchantId);
@@ -2447,7 +2462,7 @@ export class PostgreSQLStorage implements IStorage {
 
     return allMerchants.filter(merchant => {
       if (!merchant.accessEndDate) return false;
-      return new Date(merchant.accessEndDate) <= now && merchant.status === "active";
+      return new Date(merchant.accessEndDate) <= now && merchant.status === "active" && merchant.planStatus !== "free";
     });
   }
 

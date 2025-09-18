@@ -4,7 +4,8 @@ import { Pool } from "pg";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { randomUUID } from "crypto";
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { z } from "zod";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -19,8 +20,45 @@ const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+const merchants = pgTable("merchants", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerName: text("owner_name").notNull(),
+  email: text("email").notNull().unique(),
+  password: text("password").notNull(),
+  phone: text("phone").notNull(),
+  address: text("address").notNull(),
+  status: text("status").notNull().default("pending"),
+  logoUrl: text("logo_url"),
+  isOpen: boolean("is_open").notNull().default(true),
+  workDays: text("work_days").notNull().default("[1,2,3,4,5,6]"),
+  startTime: text("start_time").notNull().default("09:00"),
+  endTime: text("end_time").notNull().default("18:00"),
+  breakStartTime: text("break_start_time").default("12:00"),
+  breakEndTime: text("break_end_time").default("13:00"),
+  accessStartDate: timestamp("access_start_date"),
+  accessEndDate: timestamp("access_end_date"),
+  accessDurationDays: integer("access_duration_days").default(30),
+  lastPaymentDate: timestamp("last_payment_date"),
+  nextPaymentDue: timestamp("next_payment_due"),
+  monthlyFee: integer("monthly_fee").default(5000),
+  paymentStatus: text("payment_status").notNull().default("pending"),
+  planStatus: text("plan_status").notNull().default("free"),
+  planValidity: timestamp("plan_validity"),
+  noShowFeeEnabled: boolean("no_show_fee_enabled").notNull().default(false),
+  noShowFeeAmount: integer("no_show_fee_amount").default(0),
+  lateFeeEnabled: boolean("late_fee_enabled").notNull().default(false),
+  lateFeeAmount: integer("late_fee_amount").default(0),
+  lateToleranceMinutes: integer("late_tolerance_minutes").default(15),
+  cancellationPolicyHours: integer("cancellation_policy_hours").default(24),
+  cancellationFeeEnabled: boolean("cancellation_fee_enabled").notNull().default(false),
+  cancellationFeeAmount: integer("cancellation_fee_amount").default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 const db = drizzle(pool, {
-  schema: { users }
+  schema: { users, merchants }
 });
 
 async function runMigrations() {
