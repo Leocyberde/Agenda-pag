@@ -74,7 +74,7 @@ export class PostgreSQLStorage implements IStorage {
       password: hashedPassword,
       role: insertUser.role || "merchant",
       createdAt: new Date(),
-      updatedAt: new Date(), // Ensure updatedAt is set
+      updatedAt: new Date()// Ensure updatedAt is set
     };
 
     await this.db.insert(users).values(user).execute();
